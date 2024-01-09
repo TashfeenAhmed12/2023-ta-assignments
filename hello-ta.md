@@ -1,4 +1,4 @@
-Untitled
+hello-ta
 ================
 
 ## GitHub Documents
@@ -46,7 +46,41 @@ library('tidyverse')
 
 ``` r
 library('ggplot2')
+library('igraph')
 ```
+
+    ## Warning: package 'igraph' was built under R version 4.2.3
+
+    ## 
+    ## Attaching package: 'igraph'
+    ## 
+    ## The following objects are masked from 'package:lubridate':
+    ## 
+    ##     %--%, union
+    ## 
+    ## The following objects are masked from 'package:dplyr':
+    ## 
+    ##     as_data_frame, groups, union
+    ## 
+    ## The following objects are masked from 'package:purrr':
+    ## 
+    ##     compose, simplify
+    ## 
+    ## The following object is masked from 'package:tidyr':
+    ## 
+    ##     crossing
+    ## 
+    ## The following object is masked from 'package:tibble':
+    ## 
+    ##     as_data_frame
+    ## 
+    ## The following objects are masked from 'package:stats':
+    ## 
+    ##     decompose, spectrum
+    ## 
+    ## The following object is masked from 'package:base':
+    ## 
+    ##     union
 
 You can include R code in the document as follows:
 
