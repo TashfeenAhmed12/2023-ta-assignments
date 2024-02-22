@@ -1,0 +1,709 @@
+---
+title: "Group Assignment"
+output: pdf_document
+date: "2024-01-23"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Group members:
+
+* Tashfeen Ahmed
+* Adrian Alarcon
+* Yvan Kammelu
+* Zhicheng Zhong
+
+
+```{r}
+#install.packages(c("arrow","gender", "wru", "lubridate", "gtsummary"))
+# Load required libraries
+library(gender)
+library(wru)
+library(lubridate)
+library(dplyr)
+library(gtsummary)
+library(arrow)
+library(tidyr)
+library(zoo)
+library(purrr)
+
+
+```
+
+```{r}
+data<- read_feather("app_data_starter.feather")
+```
+
+
+
+```{r}
+# Task 1: Create individual-level variables
+examiner_names <- data %>% distinct(examiner_name_first)
+
+```
+
+## Obtaining gender of the examiner
+
+Using the `gender` package, we identify the gender of the examiner based on the first name, according to the documentation.
+
+```{r}
+# get a table of names and gender
+
+examiner_names_gender <- examiner_names %>% 
+  do(results = gender(.$examiner_name_first, method = "ssa")) %>% 
+  unnest(cols = c(results), keep_empty = TRUE) %>% 
+  select(
+    examiner_name_first = name,
+    gender,
+    proportion_female
+  )
+
+
+```
+In this part, we joined the gender data obtained in the previous step into the main dataset.
+
+```{r}
+# remove extra colums from the gender table
+examiner_names_gender <- examiner_names_gender %>% 
+  select(examiner_name_first, gender)
+
+# joining gender back to the dataset
+data <- data %>% 
+  left_join(examiner_names_gender, by = "examiner_name_first")
+
+# cleaning up
+rm(examiner_names)
+rm(examiner_names_gender)
+gc()
+```
+## Obtaining the race of the examiner
+
+Based on the last name, and using the `wru` package, we identified the probability of the examiner to be of an specific race among Asian, Black, Hispanic and other.
+
+```{r}
+library(wru)
+
+examiner_surnames <- data %>% 
+  select(surname = examiner_name_last) %>% 
+  distinct()
+
+examiner_surnames
+```
+
+
+
+```{r}
+examiner_race <- predict_race(voter.file = examiner_surnames, surname.only = T) %>% 
+  as_tibble()
+examiner_race
+```
+
+```{r}
+examiner_race <- examiner_race %>% 
+  mutate(max_race_p = pmax(pred.asi, pred.bla, pred.his, pred.oth, pred.whi)) %>% 
+  mutate(race = case_when(
+    max_race_p == pred.asi ~ "Asian",
+    max_race_p == pred.bla ~ "black",
+    max_race_p == pred.his ~ "Hispanic",
+    max_race_p == pred.oth ~ "other",
+    max_race_p == pred.whi ~ "white",
+    TRUE ~ NA_character_
+  ))
+
+examiner_race
+```
+
+On this step, we cleaned the dataset removing extra columns
+
+```{r}
+# removing extra columns
+examiner_race <- examiner_race %>% 
+  select(surname,race)
+
+data <- data %>% 
+  left_join(examiner_race, by = c("examiner_name_last" = "surname"))
+
+rm(examiner_race)
+rm(examiner_surnames)
+gc()
+```
+
+
+```{r}
+library(lubridate) # to work with dates
+
+examiner_dates <- data %>% 
+  select(examiner_id, filing_date, appl_status_date) 
+
+examiner_dates
+```
+
+
+```{r}
+examiner_dates <- examiner_dates %>% 
+  mutate(start_date = ymd(filing_date), end_date = as_date(dmy_hms(appl_status_date)))
+```
+
+After the cleaning and preprocessing steps, we grouped the data at a examiner level. This would allow us to perform a regression models
+
+```{r}
+examiner_dates <- examiner_dates %>% 
+  group_by(examiner_id) %>% 
+  summarise(
+    earliest_date = min(start_date, na.rm = TRUE), 
+    latest_date = max(end_date, na.rm = TRUE),
+    tenure_days = interval(earliest_date, latest_date) %/% days(1)
+    ) %>% 
+  filter(year(latest_date)<2018)
+
+examiner_dates
+```
+
+```{r}
+data <- data %>% 
+  left_join(examiner_dates, by = "examiner_id")
+
+rm(examiner_dates)
+gc()
+``` 
+
+```{r}
+data
+data <- data %>%
+  select(
+    application_number,
+    filing_date,
+    examiner_name_last,
+    examiner_name_first,
+    examiner_name_middle,
+    examiner_id,
+    examiner_art_unit,
+    uspc_class,
+    uspc_subclass,
+    patent_number,
+    patent_issue_date,
+    abandon_date,
+    disposal_type,
+    appl_status_code,
+    appl_status_date,
+    tc,
+    gender = gender.y,  # Renaming the column to remove the suffix
+    race = race.y,      # Renaming the column to remove the suffix
+    earliest_date = earliest_date.y,  # Renaming the column to remove the suffix
+    latest_date = latest_date.y,  # Renaming the column to remove the suffix
+    tenure_days = tenure_days.y   # Renaming the column to remove the suffix
+  )
+data
+```
+
+
+# Task 2: Create a panel dataset
+# ------------------------------
+
+```{r}
+library(dplyr)
+library(lubridate)
+library(zoo)
+
+# Convert dates to quarters
+data <- data %>%
+  mutate(
+    filing_year_quarter = as.yearqtr(filing_date),
+    abandon_year_quarter = as.yearqtr(abandon_date),
+    issue_year_quarter = as.yearqtr(patent_issue_date)
+  )
+
+# Aggregate applications data by quarter
+panel_data <- data %>%
+  group_by(examiner_id, filing_year_quarter) %>%
+  summarise(
+    num_new_applications = n_distinct(application_number),
+    num_abandoned_applications = sum(disposal_type == "ABN", na.rm = TRUE),
+    num_issued_patents = sum(disposal_type == "ISS", na.rm = TRUE),
+    num_in_process_applications = sum(disposal_type == "PEND", na.rm = TRUE),
+    current_art_unit = first(examiner_art_unit),
+    .groups = 'drop'
+  )
+
+# Add the count of people and women in each art unit per quarter
+art_unit_info <- data %>%
+  group_by(filing_year_quarter, examiner_art_unit) %>%
+  summarise(
+    num_people_in_art_unit = n_distinct(examiner_id),
+    num_women_in_art_unit = sum(gender == "female", na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# Join the art unit info with the main panel data
+panel_data <- panel_data %>%
+  left_join(art_unit_info, by = c("filing_year_quarter", "current_art_unit" = "examiner_art_unit"))
+
+# Mark the last five quarters for each examiner
+panel_data <- panel_data %>%
+  group_by(examiner_id) %>%
+  mutate(
+    # Get a list of the last five quarters of activity for each examiner
+    last_five_quarters = list(tail(sort(unique(filing_year_quarter)), 5))
+  ) %>%
+  ungroup() %>%
+  mutate(
+    # Check if the current quarter is in the last five quarters of activity
+    separation_indicator = if_else(map_lgl(filing_year_quarter, ~ .x %in% last_five_quarters[[1]]), 1, 0)
+  )
+
+
+# Detect changes in current_art_unit
+panel_data <- panel_data %>%
+  group_by(examiner_id) %>%
+  mutate(
+    # If the current art unit is different from the previous one, it's a move (1), otherwise, it's not (0).
+    # For the first row of each examiner (where there is no "previous" art unit), use NA as the default value.
+    AU_move_indicator = if_else(current_art_unit != lag(current_art_unit, default = NA), 1, 0)
+  ) %>%
+  mutate(
+    # Replace NA with 0 - assumes that the first observation is not a move.
+    AU_move_indicator = replace_na(AU_move_indicator, 0)
+  ) %>%
+  ungroup()
+
+
+
+
+```
+
+
+
+```{r}
+table(panel_data$separation_indicator)
+table(panel_data$AU_move_indicator)
+
+```
+
+
+# Task 3: Estimate predictors for turnover and mobility
+# ---------------------------------------------------
+
+
+```{r}
+# Prepare the data for regression
+regression_data <- panel_data %>%
+  filter(num_new_applications > 0)
+
+if (!requireNamespace("xgboost", quietly = TRUE)) {
+  install.packages("xgboost")
+}
+library(xgboost)
+library(caret)
+
+# Convert data to matrix format
+X <- as.matrix(regression_data[, c("num_new_applications", 
+                                    "num_abandoned_applications", 
+                                    "num_issued_patents", 
+                                    "num_in_process_applications", 
+                                    "num_people_in_art_unit", 
+                                    "num_women_in_art_unit")])
+y <- regression_data$AU_move_indicator
+
+set.seed(123)
+params <- list(
+  objective = "binary:logistic",
+  eval_metric = "auc",  # You can also use 'recall' as the evaluation metric
+  scale_pos_weight = 7.67)
+
+
+# Train the XGBoost model
+xgb_model <- xgboost(data = X, 
+                     label = y, 
+                     objective = params$objective, 
+                     eval_metric = params$eval_metric,
+                     scale_pos_weight = params$scale_pos_weight,
+                     nrounds = 100)
+
+
+# Make predictions
+predictions <- predict(xgb_model, X, type = "response")
+
+# Convert probabilities to binary predictions
+binary_predictions <- ifelse(predictions > 0.5, 1, 0)
+
+# Evaluate the classifier using a classification report
+confusion_matrix <- confusionMatrix(data = as.factor(binary_predictions), 
+                                     reference = as.factor(y))
+print(confusion_matrix)
+
+
+```
+
+
+
+
+
+
+```{r}
+# Full classification report including precision, recall, accuracy
+
+
+# Calculate recall (sensitivity)
+recall <- sensitivity(factor(binary_predictions), factor(y), positive = "1")
+cat("Recall:", recall, "\n")
+
+```
+
+
+```{r}
+if (!requireNamespace("xgboost", quietly = TRUE)) {
+  install.packages("xgboost")
+}
+library(xgboost)
+
+
+# Extract feature importance
+importance <- xgb.importance(model = xgb_model)
+
+# Plot feature importance
+xgb.plot.importance(importance_matrix = importance)
+```
+
+#####################################################################################################
+Descriptive Analysis: Initially, perform a descriptive analysis to understand the distribution of attrition across different demographic groups and the general characteristics of examiners who leave vs. those who stay.
+
+```{r}
+enhanced_panel_data <- panel_data %>%
+  left_join(data %>% 
+              select(examiner_id, gender, race, examiner_art_unit, filing_year_quarter) %>%
+              distinct(), 
+            by = c("examiner_id", "filing_year_quarter"))
+```
+
+
+
+Plots
+
+```{r}
+#Plot 1: Attrition Rates by Gender and Race
+#This plot will help visualize attrition rates across different genders and races, providing insights into any disparities that might exist.
+
+library(ggplot2)
+
+ggplot(enhanced_panel_data, aes(x = gender, fill = race)) +
+  geom_bar(position = "fill") +
+  labs(title = "Attrition Distribution by Gender and Race", x = "Gender", y = "Proportion") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+```
+
+```{r}
+
+# plot visualizes the average number of new patent applications handled by USPTO examiners, broken down by gender and race. By displaying this data in a grouped bar chart, it highlights potential disparities or trends in workload distribution across different demographic groups
+
+library(ggplot2)
+
+# Calculating the average number of new applications by gender and race
+avg_new_applications <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_Num_New_Applications = mean(num_new_applications, na.rm = TRUE)) %>%
+  ungroup()
+
+# Plotting
+ggplot(avg_new_applications, aes(x = gender, y = Avg_Num_New_Applications, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of New Applications by Gender and Race", x = "Gender", y = "Average Number of New Applications") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+
+```
+
+```{r}
+# Average Number of Abandoned Applications by Gender and Race
+
+avg_abandoned_applications <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_Abandoned_Applications = mean(num_abandoned_applications, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_abandoned_applications, aes(x = gender, y = Avg_Abandoned_Applications, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of Abandoned Applications by Gender and Race", x = "Gender", y = "Average Abandoned Applications") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+```
+
+
+
+```{r}
+#Average Number of Issued Patents by Gender and Race
+
+avg_issued_patents <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_Issued_Patents = mean(num_issued_patents, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_issued_patents, aes(x = gender, y = Avg_Issued_Patents, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of Issued Patents by Gender and Race", x = "Gender", y = "Average Issued Patents") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+```
+
+
+```{r}
+#Average Number of In-Process Applications by Gender and Race
+avg_in_process_applications <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_In_Process_Applications = mean(num_in_process_applications, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_in_process_applications, aes(x = gender, y = Avg_In_Process_Applications, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of In-Process Applications by Gender and Race", x = "Gender", y = "Average In-Process Applications") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+
+```
+
+```{r}
+#Average Number of People in an Art Unit by Gender and Race
+avg_people_in_art_unit <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_People_in_Art_Unit = mean(num_people_in_art_unit, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_people_in_art_unit, aes(x = gender, y = Avg_People_in_Art_Unit, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of People in Art Unit by Gender and Race", x = "Gender", y = "Average People in Art Unit") +
+  scale_fill_brewer(palette = "Set2") +
+  theme_minimal()
+
+
+```
+
+```{r}
+#Average Number of Women in an Art Unit by Gender and Race
+avg_women_in_art_unit <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Avg_Women_in_Art_Unit = mean(num_women_in_art_unit, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_women_in_art_unit, aes(x = gender, y = Avg_Women_in_Art_Unit, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Average Number of Women in Art Unit by Gender and Race", x = "Gender", y = "Average Women in Art Unit") +
+  scale_fill_brewer(palette = "Set1") +
+  theme_minimal()
+
+```
+
+
+```{r}
+#Attrition Rates by Demographic Group
+
+attrition_rates <- enhanced_panel_data %>%
+  group_by(gender, race) %>%
+  summarise(Attrition_Count = sum(separation_indicator == 1, na.rm = TRUE),
+            Total_Count = n(),
+            Attrition_Rate = Attrition_Count / Total_Count) %>%
+  ungroup()
+
+ggplot(attrition_rates, aes(x = gender, y = Attrition_Rate, fill = race)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Attrition Rates by Gender and Race", x = "Gender", y = "Attrition Rate") +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal()
+
+```
+
+```{r}
+# Average Workload Metrics by Attrition Status
+
+library(ggplot2)
+library(dplyr)
+
+# Calculate the average workload metrics by attrition status
+workload_by_attrition <- enhanced_panel_data %>%
+  group_by(separation_indicator) %>%
+  summarise(
+    Avg_New_Applications = mean(num_new_applications, na.rm = TRUE),
+    Avg_Abandoned_Applications = mean(num_abandoned_applications, na.rm = TRUE),
+    Avg_Issued_Patents = mean(num_issued_patents, na.rm = TRUE)
+  ) %>%
+  gather(key = "Metric", value = "Average", -separation_indicator)
+
+# Plotting
+ggplot(workload_by_attrition, aes(x = separation_indicator, y = Average, fill = Metric)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(title = "Average Workload Metrics by Attrition Status",
+       x = "Attrition Status (0 = Stayed, 1 = Left)",
+       y = "Average Metric Value") +
+  theme_minimal()
+
+
+```
+
+Modelling Analysis
+
+```{r}
+library(xgboost)
+library(caret)
+library(dplyr)
+library(tidyr) # for pivot_longer and pivot_wider
+
+enhanced_panel_data$gender <- as.factor(enhanced_panel_data$gender)
+enhanced_panel_data$race <- as.factor(enhanced_panel_data$race)
+
+# Prepare the dataset for XGBoost by removing unwanted columns
+data <- enhanced_panel_data %>%
+  select(-examiner_id, -filing_year_quarter, -current_art_unit, -examiner_art_unit, -last_five_quarters, -AU_move_indicator) %>%
+  na.omit()  # Remove rows with NA values
+
+# Create a model matrix for the features, automatically one-hot encoding factor variables
+# Note: The '-1' removes the intercept term which is not needed for XGBoost
+features <- model.matrix(~ . -1 -separation_indicator, data = data)
+labels <- data$separation_indicator
+
+# Split the data into training and testing sets
+set.seed(123) # For reproducibility
+index <- createDataPartition(labels, p = .8, list = FALSE)
+train_features <- features[index,]
+test_features <- features[-index,]
+train_labels <- labels[index]
+test_labels <- labels[-index]
+
+# Prepare matrices for xgboost
+dtrain <- xgb.DMatrix(data = train_features, label = train_labels)
+dtest <- xgb.DMatrix(data = test_features, label = test_labels)
+
+
+# Train the XGBoost model
+set.seed(123) # for reproducibility
+params <- list(
+  objective = "binary:logistic",
+  eval_metric = "auc",  # You can also use 'recall' as the evaluation metric
+  scale_pos_weight = sum(train_labels == 0) / sum(train_labels == 1))  # Adjust based on class imbalance
+
+
+# Train the XGBoost model
+xgb_model <- xgb.train(params = params, data = dtrain, nrounds = 100, verbose = 0)
+
+# Evaluate the model
+xgb_pred <- predict(xgb_model, dtest)
+xgb_pred_label <- ifelse(xgb_pred > 0.5, 1, 0)
+confusion_matrix <- table(Predicted = xgb_pred_label, Actual = test_labels)
+confusion_matrix
+```
+
+```{r}
+# Full classification report including precision, recall, accuracy
+precision <- posPredValue(factor(xgb_pred_label), factor(test_labels), positive = "1")
+recall <- sensitivity(factor(xgb_pred_label), factor(test_labels), positive = "1")
+cat("Recall:", recall, "\n")
+cat("Precision:", precision, "\n")
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+cat("Accuracy:", accuracy, "\n")
+
+
+
+
+```
+
+
+```{r}
+# Calculate the ROC curve
+# Ensure the pROC package is installed and loaded
+if (!requireNamespace("pROC", quietly = TRUE)) {
+  install.packages("pROC")
+}
+library(pROC)
+
+# Calculate the ROC curve and AUC
+roc_obj <- roc(response = test_labels, predictor = as.numeric(xgb_pred))
+
+roc_plot <- ggroc(roc_obj)
+
+# Calculate AUC value
+auc_value <- auc(roc_obj)
+
+# Plotting the ROC curve with AUC value annotated on the plot
+roc_plot_with_auc <- roc_plot +
+  geom_abline(linetype = 'dashed') +
+  labs(title = 'ROC Curve',
+       x = 'False Positive Rate',
+       y = 'True Positive Rate') +
+  theme_minimal() +
+  annotate("text", x = 0.6, y = 0.2, label = paste("AUC =", round(auc_value, 2)), color = "red", size = 5) # Adjust x and y for label position
+
+print(roc_plot_with_auc)
+```
+
+
+```{r}
+# Feature importance
+importance_matrix <- xgb.importance(model = xgb_model)
+
+
+# Plot Feature Importance
+xgb.plot.importance(importance_matrix)
+```
+
+
+Calculating effect
+```{r}
+# Install 'grf' package if not already installed
+if (!requireNamespace("grf", quietly = TRUE)) {
+  install.packages("grf")
+}
+
+# Load required libraries
+library(grf)
+
+# Filter data to keep only rows where gender is male or female
+data <- data[data$gender %in% c("male", "female"), ]
+data$gender <- factor(data$gender)
+
+# Convert gender to binary (0 for male, 1 for female)
+data$gender_binary <- as.integer(data$gender == "female")
+
+# Fit the uplift classifier
+uplift_model <- causal_forest(
+  Y = data$separation_indicator,
+  W = data$gender_binary,  # Treatment variable (0 for male, 1 for female)
+  X = data[, c("num_new_applications", 
+               "num_abandoned_applications", 
+               "num_issued_patents", 
+               "num_in_process_applications", 
+               "num_people_in_art_unit", 
+               "num_women_in_art_unit" 
+               )]  
+)
+
+# Calculate ATE
+ate_estimate <- predict(uplift_model, estimate.variance = TRUE)$predictions
+
+
+```
+
+
+```{r}
+# Print ITE
+print(ate_estimate[1:10])
+```
+
+```{r}
+# Calculate ATE
+ate_estimate <- mean(ate_estimate)
+
+# Print ATE estimate
+print(ate_estimate)
+
+```
+A negative ATE suggests that, on average, being in the treated group ( female) leads to a decrease in the outcome variable compared to being in the control group ( being male). This could imply that, on average, being female is associated with a lower likelihood of separation
+
+
