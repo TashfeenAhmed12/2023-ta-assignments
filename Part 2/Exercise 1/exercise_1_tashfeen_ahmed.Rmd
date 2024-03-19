@@ -1,5 +1,5 @@
 ---
-title: "Exercise 1"
+title: "Exercise 1 - Tashfeen Ahmed - 261145667"
 output: pdf_document
 date: "2024-03-14"
 ---
@@ -23,7 +23,7 @@ library(purrr)
 library(tidyr)
 library(stringr)
 library(readr)
-
+library(ggrepel)
 ```
 
 
@@ -88,22 +88,28 @@ graph_connections <- graph_connections %>%
   )
 
 
-# Visualize the graph
-g <- ggraph(graph_connections, layout = "kk") + 
-  geom_edge_link(aes(edge_alpha = 0.1, color = Company)) +  # Color edges by Company
-  geom_node_text(aes(label = label), size = 3) + 
-  scale_color_viridis_d() + 
-  theme_void() + 
-  theme(legend.position = "none") + 
-  geom_node_point(color = "blue", size = 1)
 
-# Print the graph
-print(g)
 
 ```
 
 
+```{r fig.width=20, fig.height=15}
+# Visualize the graph
+g <- ggraph(graph_connections, layout = "kk") + 
+  geom_edge_link(aes(edge_alpha = 0.1, color = Company), size = 0.5) +  # Slightly thicker edges
+  geom_node_text(aes(label = label), size = 4) +  # Larger text
+  scale_color_brewer(palette = "Dark2") +  # Different palette
+  theme_void() + 
+  theme(legend.position = "none", plot.background = element_rect(fill = "white")) + 
+  geom_node_point(color = "blue", size = 3)
 
+# Print the graph
+print(g)
+
+ggsave("graph_connections.png", plot = g, width = 20, height = 15, bg = "white")
+```
+
+Note: Same color edges means same Company
 
 
 
