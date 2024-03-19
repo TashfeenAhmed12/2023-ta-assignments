@@ -1,0 +1,127 @@
+---
+title: "Exercise 1"
+output: pdf_document
+date: "2024-03-14"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load the necessary libraries
+library(dplyr)
+install.packages("tidygraph")
+install.packages("tibble")
+library(tibble)
+library(tidygraph)
+library(igraph)
+install.packages("ggraph")
+library(ggraph)
+library(purrr)
+library(tidyr)
+library(stringr)
+
+```
+
+
+```{r}
+Connections <- Connections[!is.na(Connections$Company), ]
+# Group by 'Company' and count the number of contacts per company
+company_counts <- Connections %>%
+  group_by(Company) %>%
+  summarise(Count = n())
+
+# Calculate the total count of contacts
+total_count <- nrow(Connections)
+
+# Print the count of contacts by company and the total count
+print(paste("Total count of contacts:", total_count))
+
+```
+
+
+```{r}
+# Viewing the dataset in descending order
+company_counts <- arrange(company_counts, desc(Count))
+head(company_counts,10)
+
+```
+
+
+```{r}
+
+# Keep only the first name and the first letter of the last name as a label for the nodes
+Connections <- Connections %>%
+  mutate(label = paste(`First Name`, substr(`Last Name`, 1, 1)))
+Connections <- Connections %>%
+  mutate(title = paste(`First Name`, substr(`Last Name`, 1, 1)))
+
+# Create edges dataframe
+edges <- Connections %>%
+  select(label, Company) %>%
+  distinct() %>%
+  group_by(Company) %>%
+  filter(n() > 1) %>%
+  summarise(pair = list(combn(label, 2, simplify = FALSE))) %>%
+  unnest(pair) %>%
+  mutate(from = map_chr(pair, 1), to = map_chr(pair, 2)) %>%
+  select(from, to, Company)  # Add Company column to the edges dataframe
+
+# Create the graph
+graph_connections <- as_tbl_graph(edges)
+
+# Add title, label, and Company attributes to the nodes
+graph_connections <- graph_connections %>%
+  activate(nodes) %>%
+  mutate(
+    title = str_to_title(name),
+    label = str_replace_all(title, " ", "\n"),
+  )
+
+
+# Visualize the graph
+g <- ggraph(graph_connections, layout = "kk") + 
+  geom_edge_link(aes(edge_alpha = 0.1, color = Company)) +  # Color edges by Company
+  geom_node_text(aes(label = label), size = 3) + 
+  scale_color_viridis_d() + 
+  theme_void() + 
+  theme(legend.position = "none") + 
+  geom_node_point(color = "blue", size = 1)
+
+# Print the graph
+print(g)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
