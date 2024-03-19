@@ -9,21 +9,28 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 
-```{r}
+```{r, results='hide'}
 # Load the necessary libraries
 library(dplyr)
-install.packages("tidygraph")
-install.packages("tibble")
+#install.packages("tidygraph")
+#install.packages("tibble")
 library(tibble)
 library(tidygraph)
 library(igraph)
-install.packages("ggraph")
+#install.packages("ggraph")
 library(ggraph)
 library(purrr)
 library(tidyr)
 library(stringr)
+library(readr)
 
 ```
+
+
+```{r}
+Connections <- read_csv("D:\\Google Drive\\McGill\\Winter Semester\\W2\\Talent-Analytics-Assignments\\Part 2\\Exercise 1\\Connections.csv", skip = 3)
+```
+
 
 
 ```{r}
