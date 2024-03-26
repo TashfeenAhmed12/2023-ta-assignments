@@ -5689,9 +5689,9 @@ library(visNetwork)</code></pre>
 # Create the graph
 graph &lt;- graph_from_edgelist(matrix(edges, ncol=2, byrow=TRUE), directed=FALSE)
 graph</code></pre>
-<pre><code>## IGRAPH 28cb41f UN-- 10 17 -- 
+<pre><code>## IGRAPH f6d8383 UN-- 10 17 -- 
 ## + attr: name (v/c)
-## + edges from 28cb41f (vertex names):
+## + edges from f6d8383 (vertex names):
 ##  [1] 1--2 2--A A--B A--C B--C B--D B--3 B--6 C--D C--3 C--4 D--3 D--5 D--6 3--4
 ## [16] 3--5 6--5</code></pre>
 <pre class="r"><code># Calculate centrality measures
@@ -5721,12 +5721,11 @@ cat(&quot;Degree Centrality:\n&quot;)</code></pre>
 ##  0.0000000  8.0000000 14.0000000  9.0333333  8.6000000  3.2666667  4.6333333 
 ##          6          4          5 
 ##  0.9333333  0.0000000  0.5333333</code></pre>
-<p>Seats B,C and D have highest degree centrality of 5 Seat C has
-highest Closeness Centrality of 0.0714 Seat A has highest betweeness
-centrality of 14</p>
-<div id="possible-consequences-of-your" class="section level1">
-<h1>Possible consequences of your</h1>
-<p>choice of a seat</p>
+<p>Seats B,C and D have highest degree centrality of 5</p>
+<p>Seat C has highest Closeness Centrality of 0.0714</p>
+<p>Seat A has highest betweeness centrality of 14</p>
+<div id="possible-consequences-of-your-choice-of-a-seat" class="section level1">
+<h1>Possible consequences of your choice of a seat</h1>
 <p>Seats B, C, and D (Highest Degree Centrality)</p>
 <p>Benefits: Well-Connected: Being in one of these seats means you’re at
 a central point in the network, easily reachable by others. This could
@@ -5741,8 +5740,8 @@ well-connected is the potential for being overwhelmed by too many
 interactions or information overload. This might not be ideal in
 scenarios where focus or privacy is valued. High Visibility: You might
 find yourself at the center of attention, which could be undesirable if
-you prefer a more reserved or observer role within the group. Seat C
-(Highest Closeness Centrality)</p>
+you prefer a more reserved or observer role within the group.</p>
+<p>Seat C (Highest Closeness Centrality)</p>
 <p>Benefits: Efficient Communication: Occupying the seat with the
 highest closeness centrality means you can communicate with anyone else
 in the network more efficiently than anyone else. This is beneficial in
@@ -5755,8 +5754,8 @@ activities.</p>
 burden of acting as a hub for communication, which might be taxing if
 you’re not prepared for the responsibility. Expectation to Relay
 Information: You might be expected to relay information between members
-who are less directly connected, adding to your workload. Seat A
-(Highest Betweenness Centrality)</p>
+who are less directly connected, adding to your workload.</p>
+<p>Seat A (Highest Betweenness Centrality)</p>
 <p>Benefits: Control Over Information Flow: Having the highest
 betweenness centrality means you often act as a bridge within the
 network, controlling information flow between other nodes. This can be

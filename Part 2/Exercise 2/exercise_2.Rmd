@@ -51,11 +51,12 @@ print(betweenness_centrality)
 
 ```
 Seats B,C and D have highest degree centrality of 5
+
 Seat C has highest Closeness Centrality of 0.0714
+
 Seat A has highest betweeness centrality of 14
 
-# Possible consequences of your
-choice of a seat
+# Possible consequences of your choice of a seat
 
 Seats B, C, and D (Highest Degree Centrality)
 
@@ -66,6 +67,7 @@ Influential Position: With a high degree of connections, you're in a prime spot 
 Drawbacks:
 Overwhelming Interactions: The flip side of being so well-connected is the potential for being overwhelmed by too many interactions or information overload. This might not be ideal in scenarios where focus or privacy is valued.
 High Visibility: You might find yourself at the center of attention, which could be undesirable if you prefer a more reserved or observer role within the group.
+
 Seat C (Highest Closeness Centrality)
 
 Benefits:
@@ -75,6 +77,7 @@ Central Position: This position allows for quick access to resources or informat
 Drawbacks:
 Responsibility: With great centrality comes the potential burden of acting as a hub for communication, which might be taxing if you're not prepared for the responsibility.
 Expectation to Relay Information: You might be expected to relay information between members who are less directly connected, adding to your workload.
+
 Seat A (Highest Betweenness Centrality)
 
 Benefits:
