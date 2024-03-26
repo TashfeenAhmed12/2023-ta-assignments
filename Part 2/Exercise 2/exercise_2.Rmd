@@ -1,0 +1,102 @@
+---
+title: "Exercise 2 - Tashfeen Ahmed"
+output: html_document
+date: "2024-03-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Import libraries
+library(readxl)
+library(igraph)
+#install.packages("visNetwork")
+library(visNetwork)
+
+
+```
+
+```{r}
+edges <- c(
+  "1", "2",
+  "2", "A",
+  "A", "B",  "A", "C",
+  "B", "C",  "B", "D",  "B", "3",  "B", "6",
+  "C", "D",  "C", "3",  "C", "4",
+  "D", "3",  "D", "5",  "D", "6",
+  "3", "4",  "3", "5",
+  "5", "6"
+)
+
+# Create the graph
+graph <- graph_from_edgelist(matrix(edges, ncol=2, byrow=TRUE), directed=FALSE)
+graph
+```
+```{r}
+# Calculate centrality measures
+degree_centrality <- degree(graph, mode="all")
+closeness_centrality <- closeness(graph, mode="all")
+betweenness_centrality <- betweenness(graph, directed=FALSE)
+
+# Display centrality measures
+cat("Degree Centrality:\n")
+print(degree_centrality)
+cat("\nCloseness Centrality:\n")
+print(closeness_centrality)
+cat("\nBetweenness Centrality:\n")
+print(betweenness_centrality)
+
+```
+Seats B,C and D have highest degree centrality of 5
+Seat C has highest Closeness Centrality of 0.0714
+Seat A has highest betweeness centrality of 14
+
+# Possible consequences of your
+choice of a seat
+
+Seats B, C, and D (Highest Degree Centrality)
+
+Benefits:
+Well-Connected: Being in one of these seats means you're at a central point in the network, easily reachable by others. This could be advantageous in situations where engaging with many people directly is important, such as in networking events or group discussions. You're more likely to receive information quickly and can disseminate it just as fast.
+Influential Position: With a high degree of connections, you're in a prime spot to influence the group or network due to your extensive direct contacts.
+
+Drawbacks:
+Overwhelming Interactions: The flip side of being so well-connected is the potential for being overwhelmed by too many interactions or information overload. This might not be ideal in scenarios where focus or privacy is valued.
+High Visibility: You might find yourself at the center of attention, which could be undesirable if you prefer a more reserved or observer role within the group.
+Seat C (Highest Closeness Centrality)
+
+Benefits:
+Efficient Communication: Occupying the seat with the highest closeness centrality means you can communicate with anyone else in the network more efficiently than anyone else. This is beneficial in scenarios where timely and widespread dissemination of information is critical.
+Central Position: This position allows for quick access to resources or information flowing through the network, making it ideal for roles requiring up-to-date knowledge of the entire group's activities.
+
+Drawbacks:
+Responsibility: With great centrality comes the potential burden of acting as a hub for communication, which might be taxing if you're not prepared for the responsibility.
+Expectation to Relay Information: You might be expected to relay information between members who are less directly connected, adding to your workload.
+Seat A (Highest Betweenness Centrality)
+
+Benefits:
+Control Over Information Flow: Having the highest betweenness centrality means you often act as a bridge within the network, controlling information flow between other nodes. This can be powerful in negotiation settings or where gatekeeping information is strategic.
+Connector Role: You're essential for the connectivity of the network, often linking distinct clusters or groups. This can position you as an important and influential member of the network.
+
+Drawbacks:
+Potential Bottleneck: Being a key conduit for information or interactions means that if you're unavailable or choose not to relay information, the network's efficiency could suffer.
+Pressure to Maintain Connections: The network depends on your role as a connector, which might pressure you to maintain relationships or interactions that you find less rewarding personally
+
+
+```{r}
+# Plot the graph
+# Convert igraph object to visNetwork
+set.seed(123)
+
+vis_graph <- visNetwork::toVisNetworkData(graph)
+# Create interactive network plot
+visNetwork(nodes = vis_graph$nodes, edges = vis_graph$edges) %>%
+  visInteraction(dragNodes = TRUE) %>%
+  visPhysics(enabled = FALSE)
+
+
+```
+

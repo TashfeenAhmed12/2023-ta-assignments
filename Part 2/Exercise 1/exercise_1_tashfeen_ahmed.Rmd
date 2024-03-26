@@ -93,6 +93,12 @@ graph_connections <- graph_connections %>%
 ```
 
 
+```{r}
+graph_connections
+```
+
+
+
 ```{r fig.width=20, fig.height=15}
 # Visualize the graph
 g <- ggraph(graph_connections, layout = "kk") + 
