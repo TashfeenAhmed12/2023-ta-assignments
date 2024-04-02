@@ -1,0 +1,359 @@
+---
+title: "exercise_3_tashfeen_ahmed"
+output: pdf_document
+date: "2024-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Install and load the arrow package
+#install.packages("arrow")
+#install_genderdata_package() 
+#install.packages("gender")
+#install.packages("devtools")
+#devtools::install_github("ropensci/genderdata", type = "source")
+
+#install.packages("path/to/wru_package_directory", repos = NULL, type = "source")
+#install.packages("ethnicolr")
+#install.packages("wru")
+
+library(gender)
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(wru)
+library(lubridate)
+library(igraph)
+
+
+
+
+
+```
+
+```{r}
+# Read Parquet file
+parquet_file <- "D:\\Google Drive\\McGill\\Winter Semester\\W2\\Talent-Analytics-Assignments\\Part 2\\Exercise 3\\app_data_sample.parquet"
+applications  <- read_parquet(parquet_file)
+
+# Read CSV file
+edge_link <- "D:\\Google Drive\\McGill\\Winter Semester\\W2\\Talent-Analytics-Assignments\\Part 2\\Exercise 3\\edges_sample.csv"
+edges <- read.csv(edge_link)
+
+```
+
+```{r}
+# Guess the Gender
+# get a list of first names without repetitions
+examiner_names <- applications %>% 
+  distinct(examiner_name_first)
+
+# get a table of names and gender
+examiner_names_gender <- examiner_names %>% 
+  do(results = gender(.$examiner_name_first, method = "ssa")) %>% 
+  unnest(cols = c(results), keep_empty = TRUE) %>% 
+  select(
+    examiner_name_first = name,
+    gender,
+    proportion_female
+  )
+
+# remove extra colums from the gender table
+examiner_names_gender <- examiner_names_gender %>% 
+  select(examiner_name_first, gender)
+
+# joining gender back to the dataset
+applications <- applications %>% 
+  left_join(examiner_names_gender, by = "examiner_name_first")
+
+# cleaning up
+rm(examiner_names)
+rm(examiner_names_gender)
+gc()
+```
+
+```{r}
+# Guess the examiner’s race
+
+examiner_surnames <- applications %>% 
+  select(surname = examiner_name_last) %>% 
+  distinct()
+
+examiner_race <- predict_race(voter.file = examiner_surnames, surname.only = T) %>% 
+  as_tibble()
+
+examiner_race <- examiner_race %>% 
+  mutate(max_race_p = pmax(pred.asi, pred.bla, pred.his, pred.oth, pred.whi)) %>% 
+  mutate(race = case_when(
+    max_race_p == pred.asi ~ "Asian",
+    max_race_p == pred.bla ~ "black",
+    max_race_p == pred.his ~ "Hispanic",
+    max_race_p == pred.oth ~ "other",
+    max_race_p == pred.whi ~ "white",
+    TRUE ~ NA_character_
+  ))
+
+# removing extra columns
+examiner_race <- examiner_race %>% 
+  select(surname,race)
+
+applications <- applications %>% 
+  left_join(examiner_race, by = c("examiner_name_last" = "surname"))
+
+rm(examiner_race)
+rm(examiner_surnames)
+gc()
+
+```
+
+```{r}
+library(lubridate) # to work with dates
+
+examiner_dates <- applications %>% 
+  select(examiner_id, filing_date, appl_status_date) 
+
+examiner_dates <- examiner_dates %>% 
+  mutate(start_date = ymd(filing_date), end_date = as_date(dmy_hms(appl_status_date)))
+
+examiner_dates <- examiner_dates %>% 
+  group_by(examiner_id) %>% 
+  summarise(
+    earliest_date = min(start_date, na.rm = TRUE), 
+    latest_date = max(end_date, na.rm = TRUE),
+    tenure_days = interval(earliest_date, latest_date) %/% days(1)
+    ) %>% 
+  filter(year(latest_date)<2018)
+
+applications <- applications %>% 
+  left_join(examiner_dates, by = "examiner_id")
+
+rm(examiner_dates)
+gc()
+
+```
+
+```{r}
+# List all columns in the data frame
+str(applications)
+
+```
+
+```{r}
+str(edges)
+
+```
+
+# 160 and 175 are first 3 digits of workgroups choosen
+
+**Step 1:** Filter the workgroups
+
+```{r}
+applications$examiner_id <- as.character(applications$examiner_id)
+edges$ego_examiner_id <- as.character(edges$ego_examiner_id)
+edges$alter_examiner_id <- as.character(edges$alter_examiner_id)
+edges$advice_date <- as.Date(edges$advice_date, format = "%Y-%m-%d")
+applications$filing_date <- as.Date(applications$filing_date, format = "%Y-%m-%d")
+
+# Select workgroups starting with 160 and 175
+workgroups <- applications %>%
+  filter(substr(examiner_art_unit, 1, 3) %in% c("160", "175"))
+
+# Separate the dataframe into two, one for each workgroup
+workgroup_160 <- workgroups %>% filter(substr(examiner_art_unit, 1, 3) == "160")
+workgroup_175 <- workgroups %>% filter(substr(examiner_art_unit, 1, 3) == "175")
+
+```
+
+```{r}
+str(workgroup_160)
+```
+
+Step 2: Compare on examiners' demographics
+
+```{r}
+# Summary statistics for workgroup 160
+summary_160 <- workgroup_160 %>%
+  group_by(gender, race) %>%
+  summarize(count = n(),
+            average_tenure_days = mean(tenure_days, na.rm = TRUE))
+
+# Summary statistics for workgroup 175
+summary_175 <- workgroup_175 %>%
+  group_by(gender, race) %>%
+  summarize(count = n(),
+            average_tenure_days = mean(tenure_days, na.rm = TRUE))
+
+library(ggplot2)
+
+# Plot for workgroup 160
+ggplot(summary_160, aes(x = race, y = average_tenure_days, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Average Tenure Days by Race and Gender for Workgroup 160")
+
+
+
+
+```
+
+```{r}
+# Plot for workgroup 175
+ggplot(summary_175, aes(x = race, y = average_tenure_days, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Average Tenure Days by Race and Gender for Workgroup 175")
+```
+
+```{r}
+#Count of examiners by race and gender
+# Plot the count of examiners by race and gender for workgroup 160
+ggplot(summary_160, aes(x = race, y = count, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Count of Examiners by Race and Gender for Workgroup 160")
+
+# Plot the count of examiners by race and gender for workgroup 175
+ggplot(summary_175, aes(x = race, y = count, fill = gender)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "Count of Examiners by Race and Gender for Workgroup 175")
+
+```
+
+```{r}
+#Plot 2: Distribution of tenure days by gender
+# Plot the distribution of tenure days by gender for workgroup 160
+ggplot(workgroup_160, aes(x = gender, y = tenure_days, fill = gender)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Distribution of Tenure Days by Gender for Workgroup 160")
+
+# Plot the distribution of tenure days by gender for workgroup 175
+ggplot(workgroup_175, aes(x = gender, y = tenure_days, fill = gender)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(title = "Distribution of Tenure Days by Gender for Workgroup 175")
+
+
+
+```
+
+```{r}
+#Summary Statistics Table:
+# Add a workgroup identifier to each summary
+summary_160 <- summary_160 %>% mutate(workgroup = "160")
+summary_175 <- summary_175 %>% mutate(workgroup = "175")
+
+# Combine the summaries into one table
+combined_summary <- bind_rows(summary_160, summary_175)
+
+# Print the combined summary table
+head(combined_summary,5)
+
+```
+
+```{r}
+str(edges)
+```
+
+### **Step 3:** Create advice networks and calculate centrality
+
+#\`\`\`{r} library(igraph)
+
+# Ensure character data type consistency for IDs
+
+edges$ego_examiner_id <- as.character(edges$ego_examiner_id) edges$alter_examiner_id <- as.character(edges$alter_examiner_id) applications$examiner_id <- as.character(applications$examiner_id)
+
+# Convert 'advice_date' to Date format for potential future use
+
+edges$advice_date <- as.Date(edges$advice_date, format = "%Y-%m-%d")
+
+# Convert `examiner_art_unit` to character to extract the first 3 digits correctly
+
+applications$examiner_art_unit <- as.character(applications$examiner_art_unit)
+
+# Filter applications for workgroups 160 and 175
+
+wg_160_175_ids \<- applications %\>% filter(substr(examiner_art_unit, 1, 3) %in% c("160", "175")) %\>% select(examiner_id) %\>% distinct() %\>% pull()
+
+# Ensure `ego_examiner_id` in edges is a character for accurate filtering
+
+edges$ego_examiner_id <- as.character(edges$ego_examiner_id)
+
+# Filter edges based on the examiner IDs
+
+edges_filtered \<- edges %\>% filter(ego_examiner_id %in% wg_160_175_ids)
+
+# Create network from filtered edges
+
+network \<- graph_from_data_frame(edges_filtered, directed = TRUE)
+
+# Get the IDs of examiners present in the network
+
+network_examiner_ids \<- unique(c(edges_filtered$ego_examiner_id, edges_filtered$alter_examiner_id))
+
+# Filter the degree centrality dataframe for examiners present in the network
+
+degree_df \<- degree_df %\>% filter(examiner_id %in% network_examiner_ids)
+
+#\`\`\`
+
+#\`\`\`{r} filtered_row \<- applications %\>% filter(examiner_id == "9544253")
+
+# View the filtered row
+
+print(filtered_row) #\`\`\` I ran into a problem here that none of the examiner ids in edges dataframe that i found are being matched with the applications data
+
+Logic being used to answer the 3 question: Filtering Applications: We filter the applications dataframe to include only those examiners belonging to workgroups 160 and 175 by selecting unique examiner_ids based on the first 3 digits of examiner_art_unit.
+
+Filtering Edges: We filter the edges dataframe to include only those edges where the ego examiner belongs to the selected workgroups.
+
+Create Network: We create a network from the filtered edges using the graph_from_data_frame function, considering the directed nature of the relationships.
+
+Calculating Centrality: We calculate the degree centrality for each examiner in the network, which measures the number of connections an examiner has. Degree centrality is chosen as it's a simple and widely used measure of centrality, indicating the prominence or importance of a node in a network based on its connections. It's particularly relevant in this context as it helps identify how well-connected or influential each examiner is within the advice network
+
+we visualize the degree centrality distribution for workgroups using a histogram to understand the distribution of centrality scores among examiners in that workgroup.
+
+This approach helps us understand the centrality of examiners within the advice networks, providing insights into their influence or importance in information flow and decision-making processes within the selected workgroups.
+
+To delve deeper into the relationship between degree centrality and other examiner characteristics, additional analyses can be performed using the merged applications dataframe. Descriptive statistics, visualizations, and statistical tests can be employed to explore correlations between centrality scores and variables such as gender, race, tenure, and others. This comprehensive approach facilitates a nuanced understanding of how centrality relates to various examiner attributes, shedding light on organizational dynamics and collaboration patterns within the patent examination domain
+
+#\`\`\`{r} \# Merge with applications data for further analysis applications \<- left_join(applications, degree_df, by = "examiner_id")
+
+#\`\`\`
+
+#\`\`\`{r} \# Visualization of degree centrality for workgroup 160 as an example applications$examiner_art_unit <- trimws(applications$examiner_art_unit)
+
+wg_160_data \<- applications %\>% filter(substr(examiner_art_unit, 1, 3) == "160" & !is.na(degree_centrality))
+
+ggplot(wg_160_data, aes(x = degree_centrality)) + geom_histogram(binwidth = 1, fill = "blue", alpha = 0.7) + theme_minimal() + labs(title = "Degree Centrality Distribution - Workgroup 160", x = "Degree Centrality", y = "Frequency") \##`#`{r} \# Visualization of degree centrality for workgroup 175 as an example applications$examiner_art_unit <- trimws(applications$examiner_art_unit)
+
+wg_160_data \<- applications %\>% filter(substr(examiner_art_unit, 1, 3) == "175" & !is.na(degree_centrality))
+
+ggplot(wg_160_data, aes(x = degree_centrality)) + geom_histogram(binwidth = 1, fill = "blue", alpha = 0.7) + theme_minimal() + labs(title = "Degree Centrality Distribution - Workgroup 175", x = "Degree Centrality", y = "Frequency") \#`#`{r} \# Descriptive statistics summary(applications\$degree_centrality)
+
+# Visualizations
+
+# Scatter plot of degree centrality against tenure
+
+ggplot(applications, aes(x = tenure_days, y = degree_centrality)) + geom_point() + labs(title = "Scatter Plot of Degree Centrality vs Tenure", x = "Tenure (Days)", y = "Degree Centrality")
+
+# Box plot of degree centrality by gender
+
+ggplot(applications, aes(x = gender, y = degree_centrality)) + geom_boxplot() + labs(title = "Box Plot of Degree Centrality by Gender", x = "Gender", y = "Degree Centrality")
+
+# Statistical tests
+
+# Correlation between degree centrality and tenure
+
+cor.test(applications$tenure_days, applications$degree_centrality)
+
+# ANOVA test for degree centrality across different races
+
+anova_model \<- aov(degree_centrality \~ race, data = applications) summary(anova_model)
+
+#\`\`\`
