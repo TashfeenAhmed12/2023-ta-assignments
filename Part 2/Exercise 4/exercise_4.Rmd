@@ -1,0 +1,326 @@
+---
+title: "exercise_4_tashfeen_ahmed"
+output: pdf_document
+date: "2024-04-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+# Install and load the arrow package
+#install.packages("arrow")
+#install_genderdata_package() 
+#install.packages("gender")
+#install.packages("devtools")
+#devtools::install_github("ropensci/genderdata", type = "source")
+
+#install.packages("path/to/wru_package_directory", repos = NULL, type = "source")
+#install.packages("ethnicolr")
+#install.packages("wru")
+
+library(gender)
+library(arrow)
+library(dplyr)
+library(tidyr)
+library(wru)
+library(lubridate)
+library(igraph)
+
+
+```
+
+```{r}
+# set option to view all columns
+options(dplyr.width = Inf)
+
+```
+
+```{r}
+# Read Parquet file
+parquet_file <- "D:\\Google Drive\\McGill\\Winter Semester\\W2\\Talent-Analytics-Assignments\\Part 2\\Exercise 3\\app_data_sample.parquet"
+applications  <- read_parquet(parquet_file)
+
+# Read CSV file
+edge_link <- "D:\\Google Drive\\McGill\\Winter Semester\\W2\\Talent-Analytics-Assignments\\Part 2\\Exercise 3\\edges_sample.csv"
+edges <- read.csv(edge_link)
+```
+
+```{r}
+str(applications)
+```
+
+```{r}
+# Guess the Gender
+# get a list of first names without repetitions
+examiner_names <- applications %>% 
+  distinct(examiner_name_first)
+
+# get a table of names and gender
+examiner_names_gender <- examiner_names %>% 
+  do(results = gender(.$examiner_name_first, method = "ssa")) %>% 
+  unnest(cols = c(results), keep_empty = TRUE) %>% 
+  select(
+    examiner_name_first = name,
+    gender,
+    proportion_female
+  )
+
+# remove extra colums from the gender table
+examiner_names_gender <- examiner_names_gender %>% 
+  select(examiner_name_first, gender)
+
+# joining gender back to the dataset
+applications <- applications %>% 
+  left_join(examiner_names_gender, by = "examiner_name_first")
+
+# cleaning up
+rm(examiner_names)
+rm(examiner_names_gender)
+gc()
+```
+
+```{r}
+# Guess the examiner’s race
+
+examiner_surnames <- applications %>% 
+  select(surname = examiner_name_last) %>% 
+  distinct()
+
+examiner_race <- predict_race(voter.file = examiner_surnames, surname.only = T) %>% 
+  as_tibble()
+
+examiner_race <- examiner_race %>% 
+  mutate(max_race_p = pmax(pred.asi, pred.bla, pred.his, pred.oth, pred.whi)) %>% 
+  mutate(race = case_when(
+    max_race_p == pred.asi ~ "Asian",
+    max_race_p == pred.bla ~ "black",
+    max_race_p == pred.his ~ "Hispanic",
+    max_race_p == pred.oth ~ "other",
+    max_race_p == pred.whi ~ "white",
+    TRUE ~ NA_character_
+  ))
+
+# removing extra columns
+examiner_race <- examiner_race %>% 
+  select(surname,race)
+
+applications <- applications %>% 
+  left_join(examiner_race, by = c("examiner_name_last" = "surname"))
+
+rm(examiner_race)
+rm(examiner_surnames)
+gc()
+
+```
+
+```{r}
+applications <- applications %>%
+  mutate(
+    filing_date = as.Date(filing_date),
+    patent_issue_date = as.Date(patent_issue_date),
+    abandon_date = as.Date(abandon_date),
+    final_decision_date = coalesce(patent_issue_date, abandon_date),
+    app_proc_time = as.numeric(final_decision_date - filing_date),
+    # Replace negative app_proc_time with NA
+    app_proc_time = ifelse(app_proc_time < 0, NA, app_proc_time)
+  )
+```
+
+```{r}
+
+library(dplyr)
+library(tidygraph)
+library(ggraph)
+
+
+edges <- edges %>%
+  mutate(
+    from = as.character(ego_examiner_id),
+    to = as.character(alter_examiner_id)
+  ) %>%
+  mutate(
+    from = ifelse(is.nan(as.numeric(from)), NA, from),
+    to = ifelse(is.nan(as.numeric(to)), NA, to)
+  ) %>%
+  drop_na()
+
+applications <- applications %>%
+  relocate(examiner_id, .before = application_number) %>%
+  mutate(examiner_id = as.character(examiner_id)) %>%
+  drop_na(examiner_id) %>%
+  rename(name = examiner_id)
+
+
+graph <- tbl_graph(
+  edges = (edges %>% relocate(from, to)),
+  directed = TRUE
+)
+
+applications <- applications %>%
+  mutate(name = as.character(name)) %>%
+  distinct(name, .keep_all = TRUE)
+
+graph <- graph %>%
+  activate(nodes) %>%
+  inner_join(
+    (applications %>% distinct(name, .keep_all = TRUE)),
+    by = "name"
+  )
+
+
+```
+
+```{r}
+
+graph %>%
+  activate(nodes) %>%
+  mutate(
+    degree = centrality_degree(),
+    betweenness = centrality_betweenness(),
+    closeness = centrality_closeness()
+  ) %>%
+  select(name, degree, betweenness, closeness) %>%
+  arrange(-degree)
+
+
+```
+
+```{r}
+node_data <- graph %>%
+  activate(nodes) %>%
+  mutate(
+    degree = centrality_degree(),
+    betweenness = centrality_betweenness(),
+    closeness = centrality_closeness()
+  ) %>%
+  select(name, degree, betweenness, closeness) %>%
+  as_tibble() # Convert to a tibble/data frame for joining
+
+# Joining the centrality measures back to the applications dataframe
+applications <- applications %>%
+  left_join(node_data, by = c("name" = "name"))
+
+# rename name to examiner_id
+applications <- applications %>%
+  rename(examiner_id = name)
+
+head(applications,5)
+```
+
+```{r}
+#null values in applications data each column
+sapply(applications, function(x) sum(is.na(x)))
+
+```
+
+```{r}
+# total rows in applications data
+nrow(applications)
+```
+
+```{r}
+# Dropping rows with NA in regression columns
+applications <- applications %>%
+  drop_na(app_proc_time, degree, gender, examiner_art_unit, uspc_class,disposal_type,race)
+```
+
+# Build linear regression model
+
+```{r}
+applications <- applications %>%
+  mutate(
+    examiner_art_unit = as.factor(examiner_art_unit),
+    uspc_class = as.factor(uspc_class),
+    gender = as.factor(gender),
+    race = as.factor(race),
+    disposal_type = as.factor(disposal_type)
+  )
+                                                                                                  
+```
+
+I wanted to use examiner_art_unit, uspc_class as categorical variable but considering ther are too many they are not added as features
+
+disposal_type categorical varaible is used because it tellls about the status of appplication“ISS” (issued), "ABN" (abandoned), "PEND' (PENDING). There must be a differnce in processing times for each of the category
+
+Race is used as well to understand affect of race in processing times
+
+```{r}
+#Model 1: Degree Centrality with Categorical Variables
+
+model_degree <- lm(app_proc_time ~ degree +race +disposal_type , data = applications)
+summary(model_degree)
+```
+
+#### Model 1: Degree Centrality with Categorical Variables
+
+**Model Formula**: **`app_proc_time ~ degree + race + disposal_type`**
+
+-   **Degree Centrality**: The coefficient for **`degree`** is positive (Estimate = 10.29), indicating that as an examiner's network centrality increases, the application processing time also increases slightly. This could suggest that examiners central to the network may be involved in more complex or a higher volume of cases, potentially leading to longer processing times
+
+-   **Race**: The model considered race as a categorical variable. Notably, **`racewhite`** has a negative coefficient (Estimate = -126.15), suggesting that applications handled by white examiners are associated with slightly shorter processing times compared to the baseline race category.
+
+-   **Disposal Type**: **`disposal_typeISS`** (indicating a patent was issued) is positively associated with processing time (Estimate = 92.74), which might reflect the additional scrutiny and time required for applications that eventually get approved
+
+```{r}
+#Model 2: Betweenness Centrality with Categorical Variables
+
+model_betweenness <- lm(app_proc_time ~ betweenness +race +disposal_type, data = applications)
+summary(model_betweenness)
+```
+
+#### Model 2: Betweenness Centrality with Categorical Variables
+
+**Model Formula**: **`app_proc_time ~ betweenness + race + disposal_type`**
+
+-   **Betweenness Centrality**: The coefficient for **`betweenness`** is not statistically significant (Estimate = 8.166e-03, p-value = 0.3512), indicating that betweenness centrality might not have a clear impact on processing time in this model setup. This suggests that an examiner's role as a connector in the network does not significantly affect application processing times.
+
+```{r}
+#Model 3: Degree Centrality with Gender Interaction and Categorical Variables
+
+model_degree_gender <- lm(app_proc_time ~ degree * gender + +race +disposal_type, data = applications)
+summary(model_degree_gender)
+
+
+```
+
+#### Model 3: Degree Centrality with Gender Interaction
+
+**Model Formula**: **`app_proc_time ~ degree * gender + race + disposal_type`**
+
+-   **Degree and Gender Interaction**: The interaction term **`degree:gendermale`** is not significant (Estimate = 157.424, p-value = 0.00518), indicating that the effect of degree centrality on processing time does differ significantly between male and female examiners in this model.
+
+```{r}
+
+#Model 4: Betweenness Centrality with Gender Interaction and Categorical Variables
+model_betweenness_gender <- lm(app_proc_time ~ betweenness * gender +race +disposal_type, data = applications)
+summary(model_betweenness_gender)
+
+
+```
+
+#### Model 4: Betweenness Centrality with Gender Interaction
+
+**Model Formula**: **`app_proc_time ~ betweenness * gender + race + disposal_type`**
+
+-   **Betweenness and Gender Interaction**: Similar to degree centrality, the interaction between **`betweenness`** and **`gendermale`** is statistically significant (Estimate = 128, p-value = 0.0142), suggesting significant difference in the effect of betweenness centrality on processing times across genders.
+
+### **Explaining Regression Results and Implications for the USPTO**
+
+### **Conclusion and Implications for the USPTO**
+
+The analysis using linear regression models aimed to explore the influence of examiner centrality within the USPTO's network on patent application processing times, while considering other examiner characteristics and examining potential differences by gender. The findings suggest a slight increase in processing times with higher degree centrality but no clear impact from betweenness centrality. This increase might be attributed to the potential complexity and volume of cases handled by more central examiners
+
+### **Implications of Centrality on Operational Efficiency**
+
+**1. Enhanced Resource Allocation:** The positive association between degree centrality and increased processing times implies that examiners who are more central to the network—those with more connections—might be dealing with a higher workload or more complex cases, potentially leading to delays. Recognizing this pattern, the USPTO could consider strategies for resource allocation that support central examiners, such as redistributing workload or providing additional administrative support, to streamline the processing timeline without sacrificing the quality of patent examination
+
+### **Examination of Gender Interaction**
+
+Our analysis revealed that the interaction terms between gender and centrality measures (degree and betweenness) were statistically significant. This indicates that the impact of an examiner's centrality within the USPTO's network on application processing times does significantly differ between male and female examiners.
+
+### **Implications for the USPTO**
+
+**Operational Insights**: The significant interaction effect between gender and centrality suggests that gender does modify how centrality influences processing times. This finding could imply that the USPTO's internal processes and examiner networks function in a manner that is different for both genders and they should deploy strategies to make sure both genders have same processing times if other conditions are the same. Moreover Race should be accounted as well and it should be noted that race have differnt processing times understanding why this is so could lead to the development of solutions
