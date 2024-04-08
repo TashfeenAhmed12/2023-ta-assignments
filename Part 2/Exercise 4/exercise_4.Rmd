@@ -290,7 +290,13 @@ summary(model_degree_gender)
 
 **Model Formula**: **`app_proc_time ~ degree * gender + race + disposal_type`**
 
--   **Degree and Gender Interaction**: The interaction term **`degree:gendermale`** is not significant (Estimate = 157.424, p-value = 0.00518), indicating that the effect of degree centrality on processing time does differ significantly between male and female examiners in this model.
+-   **Degree and Gender Interaction**: The interaction term **`degree:gendermale`** is not significant (Estimate = 157.424, p-value = 0.00518), indicating that the effect of degree centrality on processing time does differ significantly between male and female examiners in this model. Male have 157 days more processing time than female
+
+-   
+
+    ```         
+    degree:gendermale   -3.204, p value greater than 5% is not significant it says that for male as betweeness centrality increases by one unit the processing time decreases by 3.2 days compared to females
+    ```
 
 ```{r}
 
@@ -305,7 +311,11 @@ summary(model_betweenness_gender)
 
 **Model Formula**: **`app_proc_time ~ betweenness * gender + race + disposal_type`**
 
--   **Betweenness and Gender Interaction**: Similar to degree centrality, the interaction between **`betweenness`** and **`gendermale`** is statistically significant (Estimate = 128, p-value = 0.0142), suggesting significant difference in the effect of betweenness centrality on processing times across genders.
+-   **Betweenness and Gender Interaction**: Similar to degree centrality, the interaction between **`betweenness`** and **`gendermale`** is statistically significant (Estimate = 128, p-value = 0.0142), suggesting significant difference in the effect of betweenness centrality on processing times across genders. Male have 128 days more processing time than females
+
+    ### **betweenness:gendermale (0.03452)**
+
+-   **Interpretation**: This is the interaction term between betweenness centrality and being male. The positive coefficient indicates that for male examiners, as betweenness centrality increases, the processing time increases by an additional 0.03452 days for every unit increase in betweenness centrality, compared to female examiners. While the coefficient seems small, the impact of betweenness centrality on processing times could accumulate, especially at high levels of centrality. However, the p-value (0.2539) suggests that this interaction effect is not statistically significant at the conventional 0.05 level, implying that we do not have strong evidence to conclude that the effect of betweenness centrality on processing times differs between male and female examiners
 
 ### **Explaining Regression Results and Implications for the USPTO**
 
@@ -319,7 +329,7 @@ The analysis using linear regression models aimed to explore the influence of ex
 
 ### **Examination of Gender Interaction**
 
-Our analysis revealed that the interaction terms between gender and centrality measures (degree and betweenness) were statistically significant. This indicates that the impact of an examiner's centrality within the USPTO's network on application processing times does significantly differ between male and female examiners.
+Our analysis revealed that the interaction terms between gender and centrality measures (degree and betweenness) were insignificant. However, male do have highest processing time compared to females
 
 ### **Implications for the USPTO**
 
